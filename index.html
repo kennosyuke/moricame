@@ -1,0 +1,594 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>もりカメ</title>
+<style>
+  :root{
+    --milk:#FFF6F2;
+    --card:#FFFFFF;
+    --ink:#4A3B3F;
+    --ink-soft:#9A868C;
+    --accent:#FF7A93;
+    --accent-soft:#FFE1E7;
+    --lav:#EFE6FF;
+    --line:#F3E4E8;
+    --shadow:0 8px 24px rgba(74,59,63,.12);
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;height:100%}
+  body{
+    font-family:"Hiragino Maru Gothic ProN","ヒラギノ丸ゴ ProN",system-ui,sans-serif;
+    background:var(--milk);color:var(--ink);
+    display:flex;flex-direction:column;min-height:100dvh;
+    padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header{text-align:center;padding:12px 16px 6px}
+  header h1{margin:0;font-size:21px;letter-spacing:.06em}
+  header h1 .spark{color:var(--accent)}
+  header p{margin:3px 0 0;font-size:11px;color:var(--ink-soft)}
+
+  .tabs{display:flex;gap:8px;margin:8px 16px 10px;background:var(--accent-soft);border-radius:16px;padding:5px}
+  .tabs button{flex:1;border:0;background:transparent;color:var(--ink-soft);font-family:inherit;font-size:14px;font-weight:700;padding:9px;border-radius:12px;transition:.15s}
+  .tabs button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow)}
+
+  .stage{
+    flex:1;margin:0 16px;border-radius:22px;overflow:hidden;background:#F6EAEE;
+    position:relative;display:flex;align-items:center;justify-content:center;
+    min-height:36vh;box-shadow:var(--shadow);
+  }
+  .stage canvas{max-width:100%;max-height:100%;display:block}
+  #liveVideo{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+  .hint{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:var(--ink-soft);font-size:14px;text-align:center;padding:24px}
+  .hint .emoji{font-size:44px}
+  .spinner{width:34px;height:34px;border:4px solid var(--accent-soft);border-top-color:var(--accent);border-radius:50%;animation:spin 1s linear infinite}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  .controls{padding:10px 16px calc(10px + env(safe-area-inset-bottom))}
+  .lbl{font-size:11px;font-weight:800;color:var(--ink-soft);letter-spacing:.1em;margin:8px 2px 5px}
+  .scroll-row{display:flex;gap:8px;overflow-x:auto;padding-bottom:2px;scrollbar-width:none}
+  .scroll-row::-webkit-scrollbar{display:none}
+  .chip{
+    flex:0 0 auto;border:2px solid var(--line);background:var(--card);color:var(--ink);
+    font-family:inherit;font-size:13px;font-weight:700;padding:8px 14px;border-radius:14px;transition:.15s;white-space:nowrap;
+  }
+  .chip.on{border-color:var(--accent);background:var(--accent-soft)}
+  .chip.tone.on{border-color:#A98BF5;background:var(--lav)}
+
+  .swatches{display:flex;gap:8px}
+  .sw{width:30px;height:30px;border-radius:50%;border:3px solid #fff;box-shadow:0 0 0 2px var(--line);transition:.15s;flex:0 0 auto}
+  .sw.on{box-shadow:0 0 0 3px var(--accent);transform:scale(1.08)}
+
+  .slider-wrap{display:flex;align-items:center;gap:10px;font-size:12px;color:var(--ink-soft);margin-top:8px}
+  input[type=range]{flex:1;accent-color:var(--accent)}
+
+  .actions{display:flex;gap:10px;margin-top:10px}
+  .btn{flex:1;border:0;font-family:inherit;font-weight:800;font-size:16px;padding:14px;border-radius:18px;color:#fff;background:var(--accent);box-shadow:var(--shadow);transition:.12s}
+  .btn:active{transform:translateY(1px)}
+  .btn.ghost{background:var(--card);color:var(--ink);border:2px solid var(--line);box-shadow:none}
+  .btn:disabled{opacity:.4}
+  .note{font-size:10.5px;color:var(--ink-soft);text-align:center;margin-top:8px;line-height:1.5}
+  .note b{color:var(--accent)}
+  .hidden{display:none!important}
+  input[type=file]{display:none}
+</style>
+</head>
+<body>
+  <header>
+    <h1>もりカメ <span class="spark">✦</span></h1>
+    <p>ぜんぶ端末の中だけ・どこにも送信しません</p>
+  </header>
+
+  <div class="tabs">
+    <button id="tabPhoto" class="on">📷 しゃしん</button>
+    <button id="tabLive">🎥 カメラ</button>
+  </div>
+
+  <div class="stage">
+    <canvas id="canvas"></canvas>
+    <video id="liveVideo" playsinline muted></video>
+    <div id="hint" class="hint">
+      <div class="emoji">✨</div>
+      <div id="hintText">「しゃしんをえらぶ」からスタート</div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="lbl">フィルター</div>
+    <div class="scroll-row" id="filterRow">
+      <button class="chip filter on" data-filter="none">✨ なし</button>
+      <button class="chip filter" data-filter="cat">🐱 ねこ</button>
+      <button class="chip filter" data-filter="dog">🐶 いぬ</button>
+      <button class="chip filter" data-filter="bunny">🐰 うさぎ</button>
+    </div>
+
+    <div id="colorRow" class="hidden">
+      <div class="lbl">ねこのいろ</div>
+      <div class="swatches" id="swatches"></div>
+    </div>
+
+    <div class="lbl">もりもり</div>
+    <div class="scroll-row">
+      <button class="chip extra" data-extra="smooth">🫧 すべすべ肌</button>
+      <button class="chip extra" data-extra="blush">💗 ほっぺ</button>
+      <button class="chip extra" data-extra="sparkle">✨ キラキラ</button>
+    </div>
+
+    <div class="lbl">いろみ</div>
+    <div class="scroll-row">
+      <button class="chip tone on" data-tone="none">そのまま</button>
+      <button class="chip tone" data-tone="fluffy">ふんわり</button>
+      <button class="chip tone" data-tone="emo">エモい</button>
+      <button class="chip tone" data-tone="mono">モノクロ</button>
+    </div>
+
+    <div class="slider-wrap">
+      <span>大きさ</span>
+      <input type="range" id="sizeSlider" min="0.6" max="1.6" step="0.05" value="1">
+    </div>
+
+    <div class="actions" id="photoActions">
+      <button class="btn ghost" id="pickBtn">しゃしんをえらぶ</button>
+      <button class="btn" id="saveBtn" disabled>ほぞん</button>
+    </div>
+    <div class="actions hidden" id="liveActions">
+      <button class="btn ghost" id="flipBtn">🔄 きりかえ</button>
+      <button class="btn" id="snapBtn">とる！</button>
+    </div>
+
+    <input type="file" id="fileInput" accept="image/*">
+    <input type="file" id="captureInput" accept="image/*" capture="user">
+
+    <p class="note">
+      顔をみつけるAIは<b>この端末の中</b>で動きます。写真もカメラ映像も外部に送信されません。<br>
+      （初回だけAI本体のダウンロードにネットを使います）
+    </p>
+  </div>
+
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18";
+
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const video = document.getElementById('liveVideo');
+const hint = document.getElementById('hint');
+
+let landmarker=null, mode='photo', currentImage=null, stream=null, rafId=null, facing='user';
+const blurCv=document.createElement('canvas'), blurCtx=blurCv.getContext('2d');
+
+// ---------- 設定 ----------
+const CAT_COLORS=[
+  {name:'オレンジ', body:'#F2A24C', in:'#FFC9A3'},
+  {name:'グレー',   body:'#AAB0B6', in:'#DDE1E4'},
+  {name:'しろ',     body:'#FBF3EA', in:'#FFE1E7'},
+  {name:'くろ',     body:'#3C3A40', in:'#6E6A73'},
+  {name:'ちゃいろ', body:'#9A6A43', in:'#D8AD86'},
+];
+const opts={
+  filter:'none',                 // none | cat | dog | bunny
+  extras:{smooth:false, blush:false, sparkle:false},
+  tone:'none',                   // none | fluffy | emo | mono
+  catColor:CAT_COLORS[0],
+  size:1
+};
+
+// ---------- UI ----------
+const swWrap=document.getElementById('swatches');
+CAT_COLORS.forEach((c,i)=>{
+  const b=document.createElement('button');
+  b.className='sw'+(i===0?' on':''); b.style.background=c.body; b.title=c.name;
+  b.onclick=()=>{opts.catColor=c;[...swWrap.children].forEach(x=>x.classList.remove('on'));b.classList.add('on');redraw();};
+  swWrap.appendChild(b);
+});
+document.querySelectorAll('.chip.filter').forEach(ch=>{
+  ch.onclick=()=>{
+    opts.filter=ch.dataset.filter;
+    document.querySelectorAll('.chip.filter').forEach(x=>x.classList.toggle('on',x===ch));
+    document.getElementById('colorRow').classList.toggle('hidden',opts.filter!=='cat');
+    redraw();
+  };
+});
+document.querySelectorAll('.chip.extra').forEach(ch=>{
+  ch.onclick=()=>{
+    const k=ch.dataset.extra;
+    opts.extras[k]=!opts.extras[k];
+    ch.classList.toggle('on',opts.extras[k]);
+    redraw();
+  };
+});
+document.querySelectorAll('.chip.tone').forEach(ch=>{
+  ch.onclick=()=>{
+    opts.tone=ch.dataset.tone;
+    document.querySelectorAll('.chip.tone').forEach(x=>x.classList.toggle('on',x===ch));
+    redraw();
+  };
+});
+document.getElementById('sizeSlider').oninput=e=>{opts.size=+e.target.value;redraw();};
+
+// ---------- モデル ----------
+async function initModel(){
+  showHint('spinner','AIを よみこみ中…');
+  try{
+    const fileset=await FilesetResolver.forVisionTasks(
+      "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm");
+    const make=d=>FaceLandmarker.createFromOptions(fileset,{
+      baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",delegate:d},
+      runningMode:"IMAGE",numFaces:5});
+    try{landmarker=await make("GPU");}catch(e){landmarker=await make("CPU");}
+    hideHint();
+    if(mode==='photo'&&!currentImage)showHint('emoji','「しゃしんをえらぶ」からスタート','✨');
+  }catch(err){
+    console.error(err);
+    showHint('emoji','AIのよみこみに失敗。ネットにつないで開き直してね','😿');
+  }
+}
+function showHint(kind,text,emoji='✨'){
+  hint.classList.remove('hidden');
+  hint.innerHTML=kind==='spinner'
+    ?`<div class="spinner"></div><div>${text}</div>`
+    :`<div class="emoji">${emoji}</div><div>${text}</div>`;
+}
+function hideHint(){hint.classList.add('hidden');}
+
+// ---------- タブ ----------
+const tabPhoto=document.getElementById('tabPhoto'), tabLive=document.getElementById('tabLive');
+const canLive=()=>{
+  // file:// や content:// は isSecureContext=true でもカメラ許可自体が付与不可能。
+  // リアルタイムは https（または localhost）でのみ成立する。
+  const httpsOk=location.protocol==='https:'||['localhost','127.0.0.1'].includes(location.hostname);
+  return !!(httpsOk&&window.isSecureContext&&navigator.mediaDevices&&navigator.mediaDevices.getUserMedia);
+};
+tabPhoto.onclick=()=>switchMode('photo');
+tabLive.onclick=()=>{
+  if(canLive()){switchMode('live');return;}
+  // Androidでファイルから開いた場合など: リアルタイムAPIが使えない環境
+  // → 純正カメラアプリで撮影し、写真として加工するフォールバック
+  toast('この開き方だとリアルタイムは使えないので、撮ってから盛るよ 📸');
+  captureInput.click();
+};
+async function switchMode(m){
+  if(m===mode)return;
+  mode=m;
+  tabPhoto.classList.toggle('on',m==='photo');
+  tabLive.classList.toggle('on',m==='live');
+  document.getElementById('photoActions').classList.toggle('hidden',m!=='photo');
+  document.getElementById('liveActions').classList.toggle('hidden',m!=='live');
+  stopLive();
+  if(landmarker)await landmarker.setOptions({runningMode:m==='live'?'VIDEO':'IMAGE'});
+  if(m==='photo'){currentImage?redraw():showHint('emoji','「しゃしんをえらぶ」からスタート','✨');}
+  else startLive();
+}
+
+// ---------- 写真 ----------
+const fileInput=document.getElementById('fileInput');
+const captureInput=document.getElementById('captureInput');
+document.getElementById('pickBtn').onclick=()=>fileInput.click();
+function loadPicked(e){
+  const f=e.target.files[0]; if(!f)return;
+  const img=new Image();
+  img.onload=async()=>{
+    if(mode!=='photo')await switchMode('photo'); // ライブ中の撮影フォールバックでも写真経路で描画する
+    currentImage=img;
+    const MAX=1600,s=Math.min(1,MAX/Math.max(img.naturalWidth,img.naturalHeight));
+    canvas.width=Math.round(img.naturalWidth*s);
+    canvas.height=Math.round(img.naturalHeight*s);
+    document.getElementById('saveBtn').disabled=false;
+    redraw();
+  };
+  img.src=URL.createObjectURL(f);
+  e.target.value='';
+}
+fileInput.onchange=loadPicked;
+captureInput.onchange=loadPicked;
+function redraw(){
+  if(mode!=='photo'||!currentImage||!landmarker)return;
+  hideHint();
+  const W=canvas.width,H=canvas.height;
+  ctx.clearRect(0,0,W,H);
+  ctx.drawImage(currentImage,0,0,W,H);
+  const res=landmarker.detect(currentImage);
+  const faces=(res.faceLandmarks||[]);
+  render(faces,W,H,0);
+  if(!faces.length)toast('お顔が見つからなかったよ 🙀');
+}
+document.getElementById('saveBtn').onclick=saveCanvas;
+
+// ---------- カメラ ----------
+document.getElementById('snapBtn').onclick=saveCanvas;
+document.getElementById('flipBtn').onclick=async()=>{facing=facing==='user'?'environment':'user';await startLive();};
+async function startLive(){
+  showHint('spinner','カメラを ひらいています…');
+  stopLive();
+  try{
+    stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:facing,width:{ideal:1280},height:{ideal:720}},audio:false});
+    video.srcObject=stream; await video.play();
+    canvas.width=video.videoWidth; canvas.height=video.videoHeight;
+    hideHint(); liveLoop();
+  }catch(err){
+    console.error(err);
+    let msg='カメラを使えませんでした';
+    if(err&&err.name==='NotAllowedError')msg='この開き方だとリアルタイムは使えないみたい';
+    else if(err&&err.name==='NotFoundError')msg='カメラが見つからなかったよ';
+    else if(err&&err.name==='NotReadableError')msg='ほかのアプリがカメラを使ってるかも。閉じてからもう一度ためしてね';
+    // どのエラーでも「撮ってから盛る」に逃げられるようにする
+    hint.classList.remove('hidden');
+    hint.innerHTML=`<div class="emoji">😿</div><div>${msg}</div>
+      <button class="btn" style="flex:0 0 auto;padding:12px 22px" id="hintCapture">📸 ふつうのカメラで撮って盛る</button>`;
+    document.getElementById('hintCapture').onclick=()=>captureInput.click();
+  }
+}
+function stopLive(){
+  if(rafId)cancelAnimationFrame(rafId),rafId=null;
+  if(stream){stream.getTracks().forEach(t=>t.stop());stream=null;}
+}
+function liveLoop(){
+  const mirror=facing==='user';
+  if(video.readyState>=2&&landmarker){
+    const W=canvas.width,H=canvas.height;
+    ctx.save();
+    if(mirror){ctx.translate(W,0);ctx.scale(-1,1);}
+    ctx.drawImage(video,0,0,W,H);
+    ctx.restore();
+    let res=null;
+    try{res=landmarker.detectForVideo(video,performance.now());}catch(e){}
+    let faces=(res&&res.faceLandmarks)||[];
+    if(mirror)faces=faces.map(lm=>lm.map(p=>({x:1-p.x,y:p.y,z:p.z})));
+    render(faces,W,H,performance.now());
+  }
+  rafId=requestAnimationFrame(liveLoop);
+}
+
+// ---------- レンダリング本体 ----------
+function render(faces,W,H,t){
+  // 1. すべすべ肌（顔ごと）
+  if(opts.extras.smooth)for(const lm of faces)smoothFace(lm,W,H);
+  // 2. スタンプ（顔ごと）
+  for(const lm of faces){
+    const f=faceFrame(lm,W,H);
+    if(!f)continue;
+    if(opts.filter==='cat')drawCat(f);
+    else if(opts.filter==='dog')drawDog(f);
+    else if(opts.filter==='bunny')drawBunny(f);
+    if(opts.extras.blush)drawBlush(f,lm,W,H);
+  }
+  // 3. いろみ（全体）
+  applyTone(W,H);
+  // 4. キラキラ（最前面・顔ごと）
+  if(opts.extras.sparkle)for(const lm of faces){
+    const f=faceFrame(lm,W,H);
+    if(f)drawSparkles(f,t);
+  }
+}
+
+// 顔座標系: fp(u,v) u=横(+で画面左方向) v=縦(+で上方向)
+function faceFrame(lm,W,H){
+  const P=i=>({x:lm[i].x*W,y:lm[i].y*H});
+  const C=P(168),fore=P(10),chin=P(152),rE=P(234),lE=P(454),nose=P(1);
+  const faceW=Math.hypot(lE.x-rE.x,lE.y-rE.y);
+  const faceH=Math.hypot(fore.x-chin.x,fore.y-chin.y);
+  if(!faceW||!faceH)return null;
+  const ux=(lE.x-rE.x)/faceW,uy=(lE.y-rE.y)/faceW;
+  const vx=(fore.x-chin.x)/faceH,vy=(fore.y-chin.y)/faceH;
+  return{
+    C,nose,faceW,faceH,
+    fp:(u,v)=>({x:C.x+ux*u*faceW+vx*v*faceH,y:C.y+uy*u*faceW+vy*v*faceH}),
+    lw:Math.max(1.5,faceW*0.008),S:opts.size
+  };
+}
+function lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};}
+function luminance(hex){
+  const n=parseInt(hex.slice(1),16);
+  return 0.299*((n>>16&255)/255)+0.587*((n>>8&255)/255)+0.114*((n&255)/255);
+}
+
+// ---- ねこ ----
+function drawCat(f){
+  const{fp,lw,S,nose,faceW}=f;
+  const body=opts.catColor.body,inner=opts.catColor.in;
+  const stroke=luminance(body)>0.6?'#B79B86':'rgba(0,0,0,.25)';
+  const whisker=luminance(body)<0.4?'rgba(255,255,255,.9)':'rgba(74,59,50,.75)';
+  for(const s of[-1,1]){
+    const outer=fp(s*0.62*S,0.72*S),inn=fp(s*0.14*S,0.86*S),tip=fp(s*0.42*S,1.42*S);
+    tri(outer,tip,inn,body,stroke,lw);
+    tri(lerp(outer,tip,.3),lerp(tip,f.C,.18),lerp(inn,tip,.3),inner,null,0);
+  }
+  ctx.strokeStyle=whisker;ctx.lineWidth=lw;ctx.lineCap='round';
+  for(const s of[-1,1]){
+    const base=fp(s*0.16*S,-0.14*S);
+    for(const e of[fp(s*0.85*S,0.02*S),fp(s*0.88*S,-0.16*S),fp(s*0.82*S,-0.34*S)]){
+      ctx.beginPath();ctx.moveTo(base.x,base.y);ctx.lineTo(e.x,e.y);ctx.stroke();
+    }
+  }
+  drawNoseTri(nose,faceW*0.11*S,'#FF7A93',lw);
+}
+
+// ---- いぬ ----
+function drawDog(f){
+  const{fp,lw,S,nose,faceW}=f;
+  const body='#B07B4F',inner='#8A5A38';
+  for(const s of[-1,1]){
+    // たれ耳: 頭の上から外側へ垂れる楕円
+    const top=fp(s*0.46*S,1.05*S),bottom=fp(s*0.78*S,0.18*S);
+    const mid=lerp(top,bottom,.5);
+    const ang=Math.atan2(bottom.y-top.y,bottom.x-top.x);
+    const len=Math.hypot(bottom.x-top.x,bottom.y-top.y);
+    ctx.save();ctx.translate(mid.x,mid.y);ctx.rotate(ang);
+    ctx.beginPath();ctx.ellipse(0,0,len*0.55,faceW*0.18*S,0,0,Math.PI*2);
+    ctx.fillStyle=body;ctx.fill();
+    ctx.lineWidth=lw;ctx.strokeStyle='rgba(0,0,0,.18)';ctx.stroke();
+    ctx.beginPath();ctx.ellipse(0,0,len*0.36,faceW*0.10*S,0,0,Math.PI*2);
+    ctx.fillStyle=inner;ctx.fill();
+    ctx.restore();
+  }
+  // 大きめ丸鼻
+  const r=faceW*0.085*S;
+  ctx.beginPath();ctx.ellipse(nose.x,nose.y,r*1.25,r,0,0,Math.PI*2);
+  ctx.fillStyle='#4A3B32';ctx.fill();
+  ctx.beginPath();ctx.ellipse(nose.x-r*0.4,nose.y-r*0.35,r*0.3,r*0.2,0,0,Math.PI*2);
+  ctx.fillStyle='rgba(255,255,255,.55)';ctx.fill();
+  // した（ぺろ）
+  const tp=f.fp(0,-0.62*S);
+  ctx.beginPath();
+  ctx.moveTo(tp.x-faceW*0.10*S,tp.y);
+  ctx.quadraticCurveTo(tp.x-faceW*0.10*S,tp.y+faceW*0.26*S,tp.x,tp.y+faceW*0.26*S);
+  ctx.quadraticCurveTo(tp.x+faceW*0.10*S,tp.y+faceW*0.26*S,tp.x+faceW*0.10*S,tp.y);
+  ctx.closePath();
+  ctx.fillStyle='#FF8FA5';ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.12)';ctx.lineWidth=lw*0.8;ctx.stroke();
+  ctx.beginPath();ctx.moveTo(tp.x,tp.y+faceW*0.04*S);ctx.lineTo(tp.x,tp.y+faceW*0.20*S);
+  ctx.strokeStyle='rgba(200,70,95,.6)';ctx.stroke();
+}
+
+// ---- うさぎ ----
+function drawBunny(f){
+  const{fp,lw,S,nose,faceW}=f;
+  for(const s of[-1,1]){
+    const base=fp(s*0.30*S,0.85*S),tip=fp(s*0.42*S,2.05*S);
+    const mid=lerp(base,tip,.5);
+    const ang=Math.atan2(tip.y-base.y,tip.x-base.x);
+    const len=Math.hypot(tip.x-base.x,tip.y-base.y);
+    ctx.save();ctx.translate(mid.x,mid.y);ctx.rotate(ang);
+    ctx.beginPath();ctx.ellipse(0,0,len*0.55,faceW*0.15*S,0,0,Math.PI*2);
+    ctx.fillStyle='#FDF6F0';ctx.fill();
+    ctx.lineWidth=lw;ctx.strokeStyle='#E4CDBF';ctx.stroke();
+    ctx.beginPath();ctx.ellipse(0,0,len*0.38,faceW*0.075*S,0,0,Math.PI*2);
+    ctx.fillStyle='#FFD4DE';ctx.fill();
+    ctx.restore();
+  }
+  drawNoseTri(nose,faceW*0.08*S,'#FF9DB2',lw);
+}
+
+function tri(a,b,c,fill,stroke,lw){
+  ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.lineTo(c.x,c.y);ctx.closePath();
+  ctx.fillStyle=fill;ctx.fill();
+  if(stroke){ctx.lineJoin='round';ctx.lineWidth=lw;ctx.strokeStyle=stroke;ctx.stroke();}
+}
+function drawNoseTri(nose,w,color,lw){
+  ctx.beginPath();
+  ctx.moveTo(nose.x-w,nose.y-w*0.5);ctx.lineTo(nose.x+w,nose.y-w*0.5);ctx.lineTo(nose.x,nose.y+w*0.8);
+  ctx.closePath();ctx.fillStyle=color;ctx.fill();
+  ctx.strokeStyle='rgba(0,0,0,.15)';ctx.lineWidth=lw*0.8;ctx.stroke();
+}
+
+// ---- ほっぺ ----
+function drawBlush(f,lm,W,H){
+  const r=f.faceW*0.13*opts.size;
+  for(const idx of[205,425]){
+    const p={x:lm[idx].x*W,y:lm[idx].y*H};
+    const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
+    g.addColorStop(0,'rgba(255,130,150,.34)');
+    g.addColorStop(1,'rgba(255,130,150,0)');
+    ctx.fillStyle=g;
+    ctx.beginPath();ctx.arc(p.x,p.y,r,0,Math.PI*2);ctx.fill();
+  }
+}
+
+// ---- すべすべ肌（縮小→拡大ぼかしを顔楕円にだけ合成） ----
+function smoothFace(lm,W,H){
+  const f=faceFrame(lm,W,H);
+  if(!f)return;
+  const s=8;
+  blurCv.width=Math.max(2,Math.round(W/s));
+  blurCv.height=Math.max(2,Math.round(H/s));
+  blurCtx.drawImage(canvas,0,0,blurCv.width,blurCv.height);
+  const cx=f.C.x,cy=f.C.y+f.faceH*0.12;
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx,cy,f.faceW*0.62,f.faceH*0.66,0,0,Math.PI*2);
+  ctx.clip();
+  ctx.globalAlpha=0.5;
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(blurCv,0,0,W,H);
+  ctx.restore();
+  ctx.globalAlpha=1;
+}
+
+// ---- キラキラ ----
+const SPARK_POS=[
+  {u:-0.95,v:0.55,s:1.0},{u:0.98,v:0.75,s:0.7},{u:-0.75,v:1.35,s:0.6},
+  {u:0.8,v:1.5,s:0.9},{u:-1.05,v:-0.1,s:0.5},{u:1.1,v:0.1,s:0.6},{u:0.15,v:1.75,s:0.7}
+];
+function drawSparkles(f,t){
+  ctx.fillStyle='#FFF3B0';
+  SPARK_POS.forEach((sp,i)=>{
+    const p=f.fp(sp.u*f.S,sp.v*f.S);
+    const base=f.faceW*0.06*sp.s*f.S;
+    const tw=t?0.55+0.45*Math.sin(t/300+i*1.7):1;
+    star4(p.x,p.y,base*tw);
+  });
+}
+function star4(x,y,r){
+  if(r<=0)return;
+  const q=r*0.28;
+  ctx.beginPath();
+  ctx.moveTo(x,y-r);ctx.quadraticCurveTo(x+q*0.4,y-q*0.4,x+r,y);
+  ctx.quadraticCurveTo(x+q*0.4,y+q*0.4,x,y+r);
+  ctx.quadraticCurveTo(x-q*0.4,y+q*0.4,x-r,y);
+  ctx.quadraticCurveTo(x-q*0.4,y-q*0.4,x,y-r);
+  ctx.fill();
+}
+
+// ---- いろみ（ctx.filter非依存・ブレンドモードのみ） ----
+function applyTone(W,H){
+  if(opts.tone==='none')return;
+  ctx.save();
+  if(opts.tone==='fluffy'){
+    fillBlend('screen','rgba(255,214,224,0.20)',W,H);
+    fillBlend('soft-light','rgba(255,255,255,0.28)',W,H);
+  }else if(opts.tone==='emo'){
+    fillBlend('multiply','rgba(46,62,110,0.14)',W,H);
+    fillBlend('soft-light','rgba(255,158,80,0.30)',W,H);
+    const g=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*0.45,W/2,H/2,Math.max(W,H)*0.75);
+    g.addColorStop(0,'rgba(0,0,0,0)');g.addColorStop(1,'rgba(20,15,30,0.32)');
+    ctx.globalCompositeOperation='multiply';
+    ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
+  }else if(opts.tone==='mono'){
+    fillBlend('saturation','#808080',W,H);
+    fillBlend('soft-light','rgba(255,255,255,0.10)',W,H);
+  }
+  ctx.restore();
+  ctx.globalCompositeOperation='source-over';
+}
+function fillBlend(op,color,W,H){
+  ctx.globalCompositeOperation=op;
+  ctx.fillStyle=color;
+  ctx.fillRect(0,0,W,H);
+}
+
+// ---------- 保存 ----------
+async function saveCanvas(){
+  const blob=await new Promise(r=>canvas.toBlob(r,'image/png'));
+  if(!blob)return;
+  const file=new File([blob],'morikame.png',{type:'image/png'});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){
+    try{await navigator.share({files:[file]});return;}
+    catch(e){if(e&&e.name==='AbortError')return;}
+  }
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='morikame.png';
+  document.body.appendChild(a);a.click();a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url),1500);
+  toast('ほぞんしたよ ✦');
+}
+
+// ---------- トースト ----------
+let toastT;
+function toast(msg){
+  let el=document.getElementById('_toast');
+  if(!el){
+    el=document.createElement('div');el.id='_toast';
+    el.style.cssText='position:fixed;left:50%;bottom:calc(140px + env(safe-area-inset-bottom));transform:translateX(-50%);background:rgba(74,59,63,.92);color:#fff;padding:10px 18px;border-radius:20px;font-size:14px;font-weight:700;z-index:99;transition:.25s;opacity:0';
+    document.body.appendChild(el);
+  }
+  el.textContent=msg;el.style.opacity='1';
+  clearTimeout(toastT);
+  toastT=setTimeout(()=>el.style.opacity='0',1600);
+}
+
+initModel();
+window.addEventListener('pagehide',stopLive);
+</script>
+</body>
+</html>
