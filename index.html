@@ -108,6 +108,15 @@
       <div class="swatches" id="swatches"></div>
     </div>
 
+    <div class="lbl">へんがお</div>
+    <div class="scroll-row">
+      <button class="chip henkao on" data-henkao="none">なし</button>
+      <button class="chip henkao" data-henkao="eyes">👀 でか目</button>
+      <button class="chip henkao" data-henkao="mouth">👄 でか口</button>
+      <button class="chip henkao" data-henkao="cheeks">🐹 ぷくぷく</button>
+      <button class="chip henkao" data-henkao="all">🤪 ぜんぶ</button>
+    </div>
+
     <div class="lbl">もりもり</div>
     <div class="scroll-row">
       <button class="chip extra" data-extra="smooth">🫧 すべすべ肌</button>
@@ -167,6 +176,7 @@ const CAT_COLORS=[
 ];
 const opts={
   filter:'none',                 // none | cat | dog | bunny
+  henkao:'none',                 // none | eyes | mouth | cheeks | all
   extras:{smooth:false, blush:false, sparkle:false},
   tone:'none',                   // none | fluffy | emo | mono
   catColor:CAT_COLORS[0],
@@ -201,6 +211,13 @@ document.querySelectorAll('.chip.tone').forEach(ch=>{
   ch.onclick=()=>{
     opts.tone=ch.dataset.tone;
     document.querySelectorAll('.chip.tone').forEach(x=>x.classList.toggle('on',x===ch));
+    redraw();
+  };
+});
+document.querySelectorAll('.chip.henkao').forEach(ch=>{
+  ch.onclick=()=>{
+    opts.henkao=ch.dataset.henkao;
+    document.querySelectorAll('.chip.henkao').forEach(x=>x.classList.toggle('on',x===ch));
     redraw();
   };
 });
@@ -341,6 +358,8 @@ function liveLoop(){
 
 // ---------- レンダリング本体 ----------
 function render(faces,W,H,t){
+  // 0. へんがお（写真そのものを歪めるので最初に）
+  if(opts.henkao!=='none')for(const lm of faces)applyHenkao(lm,W,H);
   // 1. すべすべ肌（顔ごと）
   if(opts.extras.smooth)for(const lm of faces)smoothFace(lm,W,H);
   // 2. スタンプ（顔ごと）
@@ -469,6 +488,49 @@ function drawNoseTri(nose,w,color,lw){
   ctx.moveTo(nose.x-w,nose.y-w*0.5);ctx.lineTo(nose.x+w,nose.y-w*0.5);ctx.lineTo(nose.x,nose.y+w*0.8);
   ctx.closePath();ctx.fillStyle=color;ctx.fill();
   ctx.strokeStyle='rgba(0,0,0,.15)';ctx.lineWidth=lw*0.8;ctx.stroke();
+}
+
+// ---- へんがお（局所ふくらませワープ） ----
+const warpCv=document.createElement('canvas'), warpCtx=warpCv.getContext('2d');
+function bulge(cx,cy,r,scale){
+  if(r<2||scale===1)return;
+  const d=Math.ceil(r*2);
+  warpCv.width=d; warpCv.height=d;
+  warpCtx.clearRect(0,0,d,d);
+  // 中心部を scale 倍で切り出して貼り直す（>1で拡大、<1で縮小）
+  const srcR=r/scale;
+  warpCtx.drawImage(canvas,cx-srcR,cy-srcR,srcR*2,srcR*2,0,0,d,d);
+  // 縁をソフトに溶かして境界を消す
+  const g=warpCtx.createRadialGradient(r,r,r*0.5,r,r,r);
+  g.addColorStop(0,'rgba(0,0,0,1)');
+  g.addColorStop(1,'rgba(0,0,0,0)');
+  warpCtx.globalCompositeOperation='destination-in';
+  warpCtx.fillStyle=g;
+  warpCtx.fillRect(0,0,d,d);
+  warpCtx.globalCompositeOperation='source-over';
+  ctx.drawImage(warpCv,cx-r,cy-r);
+}
+function applyHenkao(lm,W,H){
+  const f=faceFrame(lm,W,H);
+  if(!f)return;
+  const P=i=>({x:lm[i].x*W,y:lm[i].y*H});
+  const t=opts.henkao;
+  if(t==='eyes'||t==='all'){
+    for(const idx of[468,473]){ // 左右の瞳中心
+      const p=P(idx);
+      bulge(p.x,p.y,f.faceW*0.26,1.45);
+    }
+  }
+  if(t==='mouth'||t==='all'){
+    const a=P(13),b=P(14); // 上唇・下唇の中央
+    bulge((a.x+b.x)/2,(a.y+b.y)/2,f.faceW*0.34,1.55);
+  }
+  if(t==='cheeks'||t==='all'){
+    for(const idx of[205,425]){
+      const p=P(idx);
+      bulge(p.x,p.y,f.faceW*0.22,1.35);
+    }
+  }
 }
 
 // ---- ほっぺ ----
