@@ -114,6 +114,7 @@
       <button class="chip henkao" data-henkao="eyes">👀 でか目</button>
       <button class="chip henkao" data-henkao="mouth">👄 でか口</button>
       <button class="chip henkao" data-henkao="cheeks">🐹 ぷくぷく</button>
+      <button class="chip henkao" data-henkao="small">🤏 ちっちゃ顔</button>
       <button class="chip henkao" data-henkao="all">🤪 ぜんぶ</button>
     </div>
 
@@ -133,8 +134,8 @@
     </div>
 
     <div class="slider-wrap">
-      <span>大きさ</span>
-      <input type="range" id="sizeSlider" min="0.6" max="1.6" step="0.05" value="1">
+      <span>へんがおの強さ</span>
+      <input type="range" id="sizeSlider" min="0.5" max="3" step="0.1" value="1">
     </div>
 
     <div class="actions" id="photoActions">
@@ -174,13 +175,14 @@ const CAT_COLORS=[
   {name:'くろ',     body:'#3C3A40', in:'#6E6A73'},
   {name:'ちゃいろ', body:'#9A6A43', in:'#D8AD86'},
 ];
+const STICKER_S=0.6; // 動物スタンプの大きさ（最小値で固定）
 const opts={
   filter:'none',                 // none | cat | dog | bunny
   henkao:'none',                 // none | eyes | mouth | cheeks | all
   extras:{smooth:false, blush:false, sparkle:false},
   tone:'none',                   // none | fluffy | emo | mono
   catColor:CAT_COLORS[0],
-  size:1
+  henkaoStrength:1               // へんがおの強さ 0.5〜3
 };
 
 // ---------- UI ----------
@@ -221,7 +223,7 @@ document.querySelectorAll('.chip.henkao').forEach(ch=>{
     redraw();
   };
 });
-document.getElementById('sizeSlider').oninput=e=>{opts.size=+e.target.value;redraw();};
+document.getElementById('sizeSlider').oninput=e=>{opts.henkaoStrength=+e.target.value;redraw();};
 
 // ---------- モデル ----------
 async function initModel(){
@@ -392,7 +394,7 @@ function faceFrame(lm,W,H){
   return{
     C,nose,faceW,faceH,
     fp:(u,v)=>({x:C.x+ux*u*faceW+vx*v*faceH,y:C.y+uy*u*faceW+vy*v*faceH}),
-    lw:Math.max(1.5,faceW*0.008),S:opts.size
+    lw:Math.max(1.5,faceW*0.008),S:STICKER_S
   };
 }
 function lerp(a,b,t){return{x:a.x+(b.x-a.x)*t,y:a.y+(b.y-a.y)*t};}
@@ -403,19 +405,24 @@ function luminance(hex){
 
 // ---- ねこ ----
 function drawCat(f){
-  const{fp,lw,S,nose,faceW}=f;
+  const{fp,lw,S,nose,faceW,faceH,C}=f;
   const body=opts.catColor.body,inner=opts.catColor.in;
   const stroke=luminance(body)>0.6?'#B79B86':'rgba(0,0,0,.25)';
   const whisker=luminance(body)<0.4?'rgba(255,255,255,.9)':'rgba(74,59,50,.75)';
   for(const s of[-1,1]){
     const outer=fp(s*0.62*S,0.72*S),inn=fp(s*0.14*S,0.86*S),tip=fp(s*0.42*S,1.42*S);
     tri(outer,tip,inn,body,stroke,lw);
-    tri(lerp(outer,tip,.3),lerp(tip,f.C,.18),lerp(inn,tip,.3),inner,null,0);
+    tri(lerp(outer,tip,.3),lerp(tip,C,.18),lerp(inn,tip,.3),inner,null,0);
   }
+  // ひげ: 鼻を原点にした座標系で「鼻の横」から生やす
+  const u1=fp(1,0),v1=fp(0,1);
+  const U={x:(u1.x-C.x)/faceW,y:(u1.y-C.y)/faceW};
+  const V={x:(v1.x-C.x)/faceH,y:(v1.y-C.y)/faceH};
+  const np=(u,v)=>({x:nose.x+U.x*u*faceW+V.x*v*faceH,y:nose.y+U.y*u*faceW+V.y*v*faceH});
   ctx.strokeStyle=whisker;ctx.lineWidth=lw;ctx.lineCap='round';
   for(const s of[-1,1]){
-    const base=fp(s*0.16*S,-0.14*S);
-    for(const e of[fp(s*0.85*S,0.02*S),fp(s*0.88*S,-0.16*S),fp(s*0.82*S,-0.34*S)]){
+    const base=np(s*0.18*S,0.02*S);
+    for(const e of[np(s*0.85*S,0.16*S),np(s*0.90*S,0.00*S),np(s*0.84*S,-0.16*S)]){
       ctx.beginPath();ctx.moveTo(base.x,base.y);ctx.lineTo(e.x,e.y);ctx.stroke();
     }
   }
@@ -490,52 +497,89 @@ function drawNoseTri(nose,w,color,lw){
   ctx.strokeStyle='rgba(0,0,0,.15)';ctx.lineWidth=lw*0.8;ctx.stroke();
 }
 
-// ---- へんがお（局所ふくらませワープ） ----
-const warpCv=document.createElement('canvas'), warpCtx=warpCv.getContext('2d');
-function bulge(cx,cy,r,scale){
-  if(r<2||scale===1)return;
-  const d=Math.ceil(r*2);
-  warpCv.width=d; warpCv.height=d;
-  warpCtx.clearRect(0,0,d,d);
-  // 中心部を scale 倍で切り出して貼り直す（>1で拡大、<1で縮小）
-  const srcR=r/scale;
-  warpCtx.drawImage(canvas,cx-srcR,cy-srcR,srcR*2,srcR*2,0,0,d,d);
-  // 縁をソフトに溶かして境界を消す
-  const g=warpCtx.createRadialGradient(r,r,r*0.5,r,r,r);
-  g.addColorStop(0,'rgba(0,0,0,1)');
-  g.addColorStop(1,'rgba(0,0,0,0)');
-  warpCtx.globalCompositeOperation='destination-in';
-  warpCtx.fillStyle=g;
-  warpCtx.fillRect(0,0,d,d);
-  warpCtx.globalCompositeOperation='source-over';
-  ctx.drawImage(warpCv,cx-r,cy-r);
+// ---- へんがお（放射状ワープ: 円の縁で等倍=元画像と連続につながる） ----
+const warpCv=document.createElement('canvas');
+const warpCtx=warpCv.getContext('2d',{willReadFrequently:true});
+function bulge(cx,cy,R,M){
+  if(R<3||Math.abs(M-1)<0.005)return; // M>1で拡大、M<1で縮小(ちっちゃ顔)
+  // 処理解像度: ライブは軽く、写真は高精細に
+  const maxBuf=(mode==='live')?200:480;
+  const S=Math.max(16,Math.min(Math.round(2*R),maxBuf));
+  warpCv.width=S; warpCv.height=S;
+  warpCtx.clearRect(0,0,S,S);
+  warpCtx.drawImage(canvas,cx-R,cy-R,2*R,2*R,0,0,S,S);
+  let img;
+  try{img=warpCtx.getImageData(0,0,S,S);}catch(e){return;}
+  const out=warpCtx.createImageData(S,S);
+  const sd=img.data,od=out.data;
+  const c=(S-1)/2, cr=c, inv=1/M, k=1-inv; // 円半径をピクセル格子に一致させ、はみ出しを根絶
+  for(let y=0;y<S;y++){
+    const dy=y-c;
+    for(let x=0;x<S;x++){
+      const dx=x-c;
+      const d=Math.sqrt(dx*dx+dy*dy);
+      const o=(y*S+x)*4;
+      let sx=x,sy=y;
+      if(d<cr){
+        // t=0(中心)でM倍、t=1(縁)で等倍かつ変化率もゼロ(C1連続)。M<1なら縮小
+        const t=d/cr, q=1-t*t;
+        const f=1-k*q*q;
+        sx=Math.min(S-1,Math.max(0,c+dx*f));
+        sy=Math.min(S-1,Math.max(0,c+dy*f));
+      }
+      // バイリニア補間
+      const x0=Math.floor(sx),y0=Math.floor(sy);
+      const x1=Math.min(x0+1,S-1),y1=Math.min(y0+1,S-1);
+      const fx=sx-x0,fy=sy-y0;
+      const i00=(y0*S+x0)*4,i10=(y0*S+x1)*4,i01=(y1*S+x0)*4,i11=(y1*S+x1)*4;
+      const w00=(1-fx)*(1-fy),w10=fx*(1-fy),w01=(1-fx)*fy,w11=fx*fy;
+      od[o  ]=sd[i00  ]*w00+sd[i10  ]*w10+sd[i01  ]*w01+sd[i11  ]*w11;
+      od[o+1]=sd[i00+1]*w00+sd[i10+1]*w10+sd[i01+1]*w01+sd[i11+1]*w11;
+      od[o+2]=sd[i00+2]*w00+sd[i10+2]*w10+sd[i01+2]*w01+sd[i11+2]*w11;
+      od[o+3]=sd[i00+3]*w00+sd[i10+3]*w10+sd[i01+3]*w01+sd[i11+3]*w11;
+    }
+  }
+  warpCtx.putImageData(out,0,0);
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx,cy,R,0,Math.PI*2);
+  ctx.clip();
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(warpCv,0,0,S,S,cx-R,cy-R,2*R,2*R);
+  ctx.restore();
 }
 function applyHenkao(lm,W,H){
   const f=faceFrame(lm,W,H);
   if(!f)return;
   const P=i=>({x:lm[i].x*W,y:lm[i].y*H});
   const t=opts.henkao;
+  const k=opts.henkaoStrength;           // 0.5〜3
+  const sc=base=>1+(base-1)*k;           // 強さで倍率を伸縮
   if(t==='eyes'||t==='all'){
     for(const idx of[468,473]){ // 左右の瞳中心
       const p=P(idx);
-      bulge(p.x,p.y,f.faceW*0.26,1.45);
+      bulge(p.x,p.y,f.faceW*0.30,sc(1.45));
     }
   }
   if(t==='mouth'||t==='all'){
     const a=P(13),b=P(14); // 上唇・下唇の中央
-    bulge((a.x+b.x)/2,(a.y+b.y)/2,f.faceW*0.34,1.55);
+    bulge((a.x+b.x)/2,(a.y+b.y)/2,f.faceW*0.42,sc(1.55));
   }
   if(t==='cheeks'||t==='all'){
     for(const idx of[205,425]){
       const p=P(idx);
-      bulge(p.x,p.y,f.faceW*0.22,1.35);
+      bulge(p.x,p.y,f.faceW*0.30,sc(1.60));
     }
+  }
+  if(t==='small'){
+    // 顔全体を中心に吸い込む: 1/sc で縮小方向へ（最大でも約0.57倍まで）
+    bulge(f.nose.x,f.nose.y,f.faceW*0.95,1/sc(1.25));
   }
 }
 
 // ---- ほっぺ ----
 function drawBlush(f,lm,W,H){
-  const r=f.faceW*0.13*opts.size;
+  const r=f.faceW*0.13*STICKER_S;
   for(const idx of[205,425]){
     const p={x:lm[idx].x*W,y:lm[idx].y*H};
     const g=ctx.createRadialGradient(p.x,p.y,0,p.x,p.y,r);
